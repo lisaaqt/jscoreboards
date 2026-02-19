@@ -1,0 +1,56 @@
+plugins {
+    id "com.gradleup.shadow" version "9.3.1" apply false
+}
+
+allprojects {
+    group = "dev.lisaa.jscoreboards.paper"
+    version = project.projectVersion
+
+    repositories {
+        mavenCentral()
+
+        maven {
+            name = "papermc"
+            url = uri("https://repo.papermc.io/repository/maven-public/")
+        }
+    }
+}
+
+subprojects {
+
+    apply plugin: "java-library"
+    apply plugin: "maven-publish"
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = "UTF-8"
+    }
+
+    publishing {
+        publications {
+            mavenJava(MavenPublication) {
+                from components.java
+                groupId = project.group
+                artifactId = project.name
+                version = project.version
+            }
+        }
+
+        repositories {
+            maven {
+                name = "lisaaCentral"
+                url = uri("https://artifactory.lisaa.dev/maven-releases")
+
+                credentials(PasswordCredentials) {
+                    username = project.findProperty("lisaaCentralUsername")
+                    password = project.findProperty("lisaaCentralPassword")
+                }
+            }
+        }
+    }
+}

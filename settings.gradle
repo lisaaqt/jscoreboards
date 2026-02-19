@@ -1,0 +1,5 @@
+rootProject.name = "jscoreboards"
+
+include 'api'
+include 'abstraction'
+include '1_20-1_21'

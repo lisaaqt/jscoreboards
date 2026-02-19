@@ -1,0 +1,15 @@
+plugins {
+    id "java-library"
+}
+
+dependencies {
+    compileOnly project(":abstraction")
+
+    compileOnly "io.papermc.paper:paper-api:1.21-R0.1-SNAPSHOT"
+}
+
+publishing {
+    publications.named("mavenJava", MavenPublication) {
+        artifactId = "jscoreboards-1_20-1_21"
+    }
+}

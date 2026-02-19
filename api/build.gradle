@@ -1,0 +1,33 @@
+plugins {
+    id "java-library"
+    id "com.gradleup.shadow"
+}
+
+dependencies {
+
+    // Provided scope → compileOnly in Gradle
+    compileOnly "io.papermc.paper:paper-api:1.21-R0.1-SNAPSHOT"
+
+    implementation project(":abstraction")
+    implementation project(":1_20-1_21")
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+tasks.shadowJar {
+    archiveClassifier.set("") // replaces normal jar
+}
+
+tasks.build {
+    dependsOn shadowJar
+}
+
+publishing {
+    publications.named("mavenJava", MavenPublication) {
+        artifactId = "jscoreboards"
+    }
+}

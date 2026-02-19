@@ -1,0 +1,13 @@
+plugins {
+    id "java-library"
+}
+
+dependencies {
+    compileOnly "io.papermc.paper:paper-api:1.21-R0.1-SNAPSHOT"
+}
+
+publishing {
+    publications.named("mavenJava", MavenPublication) {
+        artifactId = "jscoreboards-abstraction"
+    }
+}
