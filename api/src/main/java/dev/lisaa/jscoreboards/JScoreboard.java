@@ -389,4 +389,12 @@ public abstract class JScoreboard {
     private String getInvisibleEntry(int index) {
         return "§" + Integer.toHexString(index);
     }
+
+    public Optional<JScoreboardTeam> getTeamOf(Player player) {
+        UUID uuid = player.getUniqueId();
+
+        return teams.stream()
+                .filter(team -> team.isOnTeam(uuid))
+                .findFirst();
+    }
 }
