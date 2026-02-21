@@ -37,7 +37,7 @@ public class JGlobalScoreboard extends JScoreboard {
   ) {
     this.titleSupplier = titleSupplier;
     this.linesSupplier = linesSupplier;
-    this.setOptions(JScoreboardOptions.defaultOptions);
+    this.setOptions(JScoreboardOptions.DEFAULT_OPTIONS);
   }
 
   // MARK: Public API
@@ -50,6 +50,7 @@ public class JGlobalScoreboard extends JScoreboard {
     createBukkitScoreboardIfNull();
     if (linesSupplier != null) updateScoreboard(toBukkitScoreboard(), linesSupplier.get());
   }
+
 
   /**
    * Add a player to the scoreboard

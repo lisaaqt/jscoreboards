@@ -1,38 +1,50 @@
 package dev.lisaa.jscoreboards;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import org.jetbrains.annotations.Nullable;
+
 public class JScoreboardOptions {
 
-  private JScoreboardTabHealthStyle tabHealthStyle;
-  private boolean showHealthUnderName;
+  private final JScoreboardTabHealthStyle tabHealthStyle;
+  private final boolean showHealthUnderName;
 
-  public JScoreboardOptions(JScoreboardTabHealthStyle tabHealthStyle, boolean showHealthUnderName) {
+  protected JScoreboardOptions(JScoreboardTabHealthStyle tabHealthStyle, boolean showHealthUnderName) {
     this.tabHealthStyle = tabHealthStyle;
     this.showHealthUnderName = showHealthUnderName;
   }
 
-  public static JScoreboardOptions defaultOptions = new JScoreboardOptions(JScoreboardTabHealthStyle.NONE, false);
+  public static Builder builder() {
+    return new Builder();
+  }
+
+  public static class Builder {
+
+    private JScoreboardTabHealthStyle tabHealthStyle;
+    private boolean showHealthUnderName;
+
+    public Builder tabHealthStyle(JScoreboardTabHealthStyle tabHealthStyle) {
+      this.tabHealthStyle = tabHealthStyle;
+      return this;
+    }
+
+    public Builder showHealthUnderName(boolean showHealthUnderName) {
+      this.showHealthUnderName = showHealthUnderName;
+      return this;
+    }
+
+    public JScoreboardOptions build() {
+      return new JScoreboardOptions(this.tabHealthStyle, this.showHealthUnderName);
+    }
+  }
+
+  public static JScoreboardOptions DEFAULT_OPTIONS = new JScoreboardOptions(JScoreboardTabHealthStyle.NONE, false);
 
   public JScoreboardTabHealthStyle getTabHealthStyle() {
-    return tabHealthStyle;
+    return this.tabHealthStyle;
   }
 
   public boolean shouldShowHealthUnderName() {
-    return showHealthUnderName;
-  }
-
-  /**
-   * The scoreboard must be updated for this change to take effect.
-   * @param showHealthUnderName
-   */
-  public void setShowHealthUnderName(boolean showHealthUnderName) {
-    this.showHealthUnderName = showHealthUnderName;
-  }
-
-  /**
-   * The scoreboard must be updated for this change to take effect.
-   * @param tabHealthStyle
-   */
-  public void setTabHealthStyle(JScoreboardTabHealthStyle tabHealthStyle) {
-    this.tabHealthStyle = tabHealthStyle;
+    return this.showHealthUnderName;
   }
 }

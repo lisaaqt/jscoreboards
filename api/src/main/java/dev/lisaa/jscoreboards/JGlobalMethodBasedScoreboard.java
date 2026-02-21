@@ -18,7 +18,7 @@ public final class JGlobalMethodBasedScoreboard extends JGlobalScoreboard {
   }
 
   public JGlobalMethodBasedScoreboard() {
-    this(JScoreboardOptions.defaultOptions);
+    this(JScoreboardOptions.DEFAULT_OPTIONS);
   }
 
   public void setTitle(Component title) {

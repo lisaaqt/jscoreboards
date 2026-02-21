@@ -1,72 +1,58 @@
 package dev.lisaa.jscoreboards;
 
+import com.google.common.collect.ImmutableSet;
 import dev.lisaa.jscoreboards.abstraction.InternalObjectiveWrapper;
 import dev.lisaa.jscoreboards.abstraction.InternalTeamWrapper;
 import dev.lisaa.jscoreboards.exception.DuplicateTeamCreatedException;
 import dev.lisaa.jscoreboards.exception.ScoreboardLineTooLongException;
-import dev.lisaa.jscoreboards.exception.ScoreboardTeamNameTooLongException;
 import dev.lisaa.jscoreboards.versioning.SpigotAPIVersion;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
-import org.bukkit.scoreboard.DisplaySlot;
-import org.bukkit.scoreboard.Objective;
-import org.bukkit.scoreboard.Scoreboard;
-import org.bukkit.scoreboard.Team;
+import org.bukkit.scoreboard.*;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.*;
 
 public abstract class JScoreboard {
-    private JScoreboardOptions options;
 
-    private InternalObjectiveWrapper objectiveWrapper;
-    private InternalTeamWrapper teamWrapper;
+    private static final MiniMessage MINI = MiniMessage.miniMessage();
+    private static final int SPLIT_LIMIT = 64;
+    private static final int MAX_LINE_LENGTH = 128;
 
+    private JScoreboardOptions options = JScoreboardOptions.DEFAULT_OPTIONS;
+
+    private final InternalObjectiveWrapper objectiveWrapper;
+    private final InternalTeamWrapper teamWrapper;
+
+    private final Set<UUID> activePlayers = new HashSet<>();
     private final List<JScoreboardTeam> teams = new ArrayList<>();
-    private final List<UUID> activePlayers = new ArrayList<>();
-
     private final Map<Scoreboard, List<String>> previousLinesMap = new HashMap<>();
 
-    private final int maxLineLength;
-
-    public JScoreboard() {
+    protected JScoreboard() {
         try {
-            objectiveWrapper = SpigotAPIVersion.getCurrent().makeObjectiveWrapper();
-            teamWrapper = SpigotAPIVersion.getCurrent().makeInternalTeamWrapper();
-        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException |
-                 InstantiationException e) {
-            e.printStackTrace();
-            Bukkit.getLogger().severe("Failed to initialize JScoreboards- please send the full stacktrace above to https://github.com/JordanOsterberg/JScoreboards. If you are using someone else's plugin instead of developing your own, report this issue to them.");
+            this.objectiveWrapper = SpigotAPIVersion.getCurrent().makeObjectiveWrapper();
+            this.teamWrapper = SpigotAPIVersion.getCurrent().makeInternalTeamWrapper();
+        } catch (NoSuchMethodException | IllegalAccessException |
+                 InvocationTargetException | InstantiationException e) {
+            throw new RuntimeException("Failed to initialize JScoreboard", e);
         }
-        maxLineLength = 128;
     }
 
-// MARK: Public API
+    /* ========================================================= */
+    /* ======================== PUBLIC API ===================== */
+    /* ========================================================= */
 
-    /**
-     * Add a player to the scoreboard
-     *
-     * @param player The player to add
-     */
     public void addPlayer(Player player) {
-        if (activePlayers.contains(player.getUniqueId())) return;
-
-        this.activePlayers.add(player.getUniqueId());
+        activePlayers.add(player.getUniqueId());
     }
 
-    /**
-     * Remove the player from the dev.lisaa.jscoreboards.JScoreboard, and remove any teams they may be a member of.
-     * This will reset their scoreboard to the server's main scoreboard.
-     *
-     * @param player The player to remove
-     */
     public void removePlayer(Player player) {
-        this.activePlayers.remove(player.getUniqueId());
+        if (!activePlayers.remove(player.getUniqueId())) return;
+
         player.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
 
         teams.forEach(team -> {
@@ -76,240 +62,93 @@ public abstract class JScoreboard {
         });
     }
 
-    /**
-     * Find a team using a name
-     *
-     * @param name The name to search for. Color codes will be stripped from both the team name and this variable.
-     * @return The JScoreboardPlayerTeam found, if any. Will return null if no team exists
-     */
     public Optional<JScoreboardTeam> findTeam(String name) {
         return teams.stream()
-                .filter(team -> stripColor(team.getName()).equalsIgnoreCase(stripColor(name)))
-                .findAny();
+                .filter(team ->
+                        stripColor(team.getInternalName())
+                                .equalsIgnoreCase(stripColor(name)))
+                .findFirst();
     }
 
-    /**
-     * Create a team on the scoreboard. ChatColor.WHITE is used as the color for the team.
-     *
-     * @param name The name for the new team. This name cannot be longer than 16 characters
-     * @return The created JScoreboardPlayerTeam
-     * @throws DuplicateTeamCreatedException      If a team with that name already exists
-     * @throws ScoreboardTeamNameTooLongException If the team's name is longer than 16 characters
-     */
-    public JScoreboardTeam createTeam(String name, Component displayName) throws DuplicateTeamCreatedException, ScoreboardTeamNameTooLongException {
-        return createTeam(name, displayName, NamedTextColor.WHITE);
-    }
+    public void addTeams(JScoreboardTeam... newTeams)
+            throws DuplicateTeamCreatedException {
 
-    /**
-     * Create a team on the scoreboard.
-     *
-     * @param name The name for the new team. This name cannot be longer than 16 characters
-     * @return The created JScoreboardPlayerTeam
-     * @throws DuplicateTeamCreatedException      If a team with that name already exists
-     * @throws ScoreboardTeamNameTooLongException If the team's name is longer than 16 characters
-     */
-    public JScoreboardTeam createTeam(String name, Component displayName, NamedTextColor teamColor) throws DuplicateTeamCreatedException, ScoreboardTeamNameTooLongException {
-        for (JScoreboardTeam team : this.teams) {
-            if (stripColor(team.getName()).equalsIgnoreCase(stripColor(name))) {
-                throw new DuplicateTeamCreatedException(name);
+        for (JScoreboardTeam team : newTeams) {
+
+            if (team.getScoreboard() != this) {
+                throw new IllegalArgumentException(
+                        "Team " + team.getInternalName() + " belongs to another scoreboard."
+                );
+            }
+
+            if (!teams.contains(team)) {
+                team.refresh();
+                teams.add(team);
             }
         }
-
-        if (name.length() > 16) {
-            throw new ScoreboardTeamNameTooLongException(name);
-        }
-
-        JScoreboardTeam team = new JScoreboardTeam(name, displayName, teamColor, this);
-        team.refresh();
-        this.teams.add(team);
-        return team;
     }
 
-    /**
-     * Remove a team from the scoreboard
-     *
-     * @param team The team to remove from the scoreboard
-     */
     public void removeTeam(JScoreboardTeam team) {
         if (team.getScoreboard() != this) return;
 
         team.destroy();
-        this.teams.remove(team);
+        teams.remove(team);
     }
 
-    /**
-     * Destroy the scoreboard. This will reset all players to the server's main scoreboard, and clear all teams.
-     * You should call this method inside of your plugin's onDisable method.
-     */
-    public void destroy() {
-        for (UUID playerUUID : activePlayers) {
-            Player player = Bukkit.getPlayer(playerUUID);
+    public void shutdown() {
 
-            if (player != null) {
-                player.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
+        Scoreboard main = Bukkit.getScoreboardManager().getMainScoreboard();
+
+        for (UUID uuid : activePlayers) {
+
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null) continue;
+
+            Scoreboard board = resolveScoreboard(player);
+
+            if (board != null) {
+                // Remove sidebar
+                board.clearSlot(DisplaySlot.SIDEBAR);
+
+                // Reset scores
+                board.getEntries().forEach(board::resetScores);
+
+                // Unregister line teams
+                board.getTeams().forEach(team -> {
+                    if (team.getName().startsWith("line")) {
+                        team.unregister();
+                    }
+                });
+
+                previousLinesMap.remove(board);
             }
+
+            player.setScoreboard(main);
         }
 
-        for (JScoreboardTeam team : teams) {
-            team.destroy();
-        }
+        // Destroy custom teams
+        teams.forEach(JScoreboardTeam::destroy);
 
-        this.activePlayers.clear();
-        this.teams.clear();
+        activePlayers.clear();
+        teams.clear();
+        previousLinesMap.clear();
     }
 
-    /**
-     * Get the teams registered on the Scoreboard
-     *
-     * @return The teams registered on the scoreboard
-     */
-    public List<JScoreboardTeam> getTeams() {
-        return teams;
+    public ImmutableSet<JScoreboardTeam> getTeams() {
+        return ImmutableSet.copyOf(teams);
     }
 
-    /**
-     * Get the options for the Scoreboard.
-     * If changed directly, updateScoreboard() must be called manually.
-     *
-     * @return The options for the scoreboard
-     */
     public JScoreboardOptions getOptions() {
         return options;
     }
 
-// MARK: Private API
-
-    /**
-     * Update a scoreboard with a list of lines
-     * These lines must be in reverse order!
-     *
-     * @throws ScoreboardLineTooLongException If a String within the lines array is over 64 characters, this dev.lisaa.jscoreboards.exception is thrown.
-     */
-    protected void updateScoreboard(Scoreboard scoreboard, List<String> lines) throws ScoreboardLineTooLongException {
-        Objective objective = objectiveWrapper.getDummyObjective(scoreboard);
-
-        Component title = getTitle(scoreboard);
-        if (title == null) {
-            title = Component.empty();
-        }
-
-        objective.displayName(title);
-
-        if (lines == null) {
-            lines = new ArrayList<>();
-        }
-
-        if (previousLinesMap.containsKey(scoreboard)) {
-            if (previousLinesMap.get(scoreboard).equals(lines)) { // Are the lines the same? Don't take up server resources to change absolutely nothing
-                updateTeams(scoreboard); // Update the teams anyway
-                return;
-            }
-
-            // Size difference means unregister objective to reset and re-register teams correctly
-            if (previousLinesMap.get(scoreboard).size() != lines.size()) {
-                scoreboard.clearSlot(DisplaySlot.SIDEBAR);
-                scoreboard.getEntries().forEach(scoreboard::resetScores);
-                scoreboard.getTeams().forEach(team -> {
-                    if (team.getName().contains("line")) {
-                        team.unregister();
-                    }
-                });
-            }
-        }
-
-        // This is a copy instead of reference to prevent previousLinesMap equality check from unexpectedly failing
-        previousLinesMap.put(scoreboard, new ArrayList<>(lines));
-
-        // Make sure we have at least one line to display
-        if (lines.isEmpty()) {
-            lines.add("");
-        }
-
-        List<String> reversedLines = new ArrayList<>(lines);
-        Collections.reverse(reversedLines);
-
-        objective.setDisplaySlot(DisplaySlot.SIDEBAR);
-
-        Objective healthObjective;
-
-        if (options.getTabHealthStyle() != JScoreboardTabHealthStyle.NONE) {
-            healthObjective = objectiveWrapper.getTabHealthObjective(options.getTabHealthStyle().toWrapped(), scoreboard);
-            healthObjective.setDisplaySlot(DisplaySlot.PLAYER_LIST);
-        } else {
-            healthObjective = objectiveWrapper.getTabHealthObjective(options.getTabHealthStyle().toWrapped(), scoreboard);
-            if (healthObjective != null) {
-                healthObjective.unregister();
-            }
-        }
-
-        if (options.shouldShowHealthUnderName()) {
-            healthObjective = objectiveWrapper.getNameHealthObjective(scoreboard);
-            healthObjective.setDisplaySlot(DisplaySlot.BELOW_NAME);
-        } else {
-            healthObjective = objectiveWrapper.getNameHealthObjective(scoreboard);
-            if (healthObjective != null) {
-                healthObjective.unregister();
-            }
-        }
-
-        // Clear any existing teams to start fresh
-        scoreboard.getTeams().forEach(team -> {
-            if (team.getName().startsWith("line")) {
-                team.unregister();
-            }
-        });
-
-        int score = 1;
-
-        for (String entry : reversedLines) {
-            if (entry.length() > maxLineLength) {
-                throw new ScoreboardLineTooLongException(entry, maxLineLength);
-            }
-
-            // Create a unique entry name that won't be visible
-            String entryName = getInvisibleEntry(score);
-
-            Team team = scoreboard.registerNewTeam("line" + score);
-            team.addEntry(entryName);
-            objective.getScore(entryName).setScore(score);
-
-            Component prefix;
-            Component suffix = Component.empty();
-
-            int cutoff = 64;
-            if (entry.length() <= cutoff) {
-                prefix = MiniMessage.miniMessage().deserialize(entry);
-            } else {
-                prefix = MiniMessage.miniMessage().deserialize(entry.substring(0, cutoff));
-                suffix = MiniMessage.miniMessage().deserialize(entry.substring(cutoff));
-            }
-
-            team.prefix(prefix);
-            team.suffix(suffix);
-
-            // Hide the team entry from display
-            team.setOption(Team.Option.NAME_TAG_VISIBILITY, Team.OptionStatus.NEVER);
-
-            score += 1;
-        }
-
-        updateTeams(scoreboard);
+    protected void setOptions(JScoreboardOptions options) {
+        this.options = options == null
+                ? JScoreboardOptions.DEFAULT_OPTIONS
+                : options;
     }
 
-    /**
-     * Update the teams on the scoreboard. Loops over all teams and calls refresh(Scoreboard)
-     *
-     * @param scoreboard The Bukkit scoreboard to use
-     */
-    private void updateTeams(Scoreboard scoreboard) {
-        this.teams.forEach(team -> team.refresh(scoreboard));
-    }
-
-    private String stripColor(String component) {
-        return PlainTextComponentSerializer.plainText().serialize(LegacyComponentSerializer.legacySection().deserialize(component));
-    }
-
-    protected List<UUID> getActivePlayers() {
+    protected Set<UUID> getActivePlayers() {
         return activePlayers;
     }
 
@@ -321,16 +160,231 @@ public abstract class JScoreboard {
         return teamWrapper;
     }
 
-    /**
-     * Set the options of the scoreboard
-     *
-     * @param options The options
-     */
-    protected void setOptions(JScoreboardOptions options) {
-        this.options = options;
+    protected abstract Component getTitle(Scoreboard scoreboard);
+
+    /* ========================================================= */
+    /* ===================== LINE UPDATES ====================== */
+    /* ========================================================= */
+
+    public void updateLine(Player player, int line, String text)
+            throws ScoreboardLineTooLongException {
+
+        Scoreboard scoreboard = resolveScoreboard(player);
+        if (scoreboard == null) return;
+
+        updateLineInternal(scoreboard, line, text, true);
     }
 
-    protected abstract Component getTitle(Scoreboard scoreboard);
+    public void updateLine(Player player, int line)
+            throws ScoreboardLineTooLongException {
+
+        Scoreboard scoreboard = resolveScoreboard(player);
+        if (scoreboard == null) return;
+
+        updateLineInternal(scoreboard, line, null, false);
+    }
+
+    private void updateLineInternal(Scoreboard scoreboard,
+                                    int line,
+                                    String newText,
+                                    boolean overwrite)
+            throws ScoreboardLineTooLongException {
+
+        List<String> cached = previousLinesMap.get(scoreboard);
+        if (cached == null) return;
+
+        int logicalIndex = cached.size() - line;
+        if (logicalIndex < 0 || logicalIndex >= cached.size()) return;
+
+        String text = overwrite ? newText : cached.get(logicalIndex);
+
+        if (overwrite) {
+            cached.set(logicalIndex, newText);
+        }
+
+        Team team = scoreboard.getTeam("line" + line);
+        if (team != null) {
+            applyText(team, text);
+        }
+    }
+
+    private Scoreboard resolveScoreboard(Player player) {
+        if (this instanceof JPerPlayerScoreboard perPlayer) {
+            return perPlayer.getScoreboard(player);
+        }
+        return player.getScoreboard();
+    }
+
+    /* ========================================================= */
+    /* ==================== SCOREBOARD UPDATE ================== */
+    /* ========================================================= */
+
+    protected void updateScoreboard(Scoreboard scoreboard, List<String> lines)
+            throws ScoreboardLineTooLongException {
+        updateInternal(scoreboard, lines, true);
+    }
+
+    protected void updateLines(Scoreboard scoreboard, List<String> lines)
+            throws ScoreboardLineTooLongException {
+        updateInternal(scoreboard, lines, false);
+    }
+
+    private void updateInternal(Scoreboard scoreboard,
+                                List<String> input,
+                                boolean updateTitle)
+            throws ScoreboardLineTooLongException {
+
+        Objective objective = objectiveWrapper.getDummyObjective(scoreboard);
+
+        if (updateTitle) {
+            objective.displayName(
+                    Optional.ofNullable(getTitle(scoreboard))
+                            .orElse(Component.empty())
+            );
+        }
+
+        List<String> lines = new ArrayList<>(
+                Optional.ofNullable(input).orElse(Collections.emptyList())
+        );
+
+        List<String> previous = previousLinesMap.get(scoreboard);
+
+        if (previous != null && previous.equals(lines)) {
+            updateTeams(scoreboard);
+            return;
+        }
+
+        if (previous != null && previous.size() != lines.size()) {
+            resetScoreboard(scoreboard);
+        }
+
+        previousLinesMap.put(scoreboard, new ArrayList<>(lines));
+
+        if (lines.isEmpty()) {
+            lines.add("");
+        }
+
+        Collections.reverse(lines);
+
+        objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+        configureHealthObjectives(scoreboard);
+
+        renderLines(scoreboard, objective, lines);
+    }
+
+    /* ========================================================= */
+    /* ===================== LINE RENDERING ==================== */
+    /* ========================================================= */
+
+    private void renderLines(Scoreboard scoreboard,
+                             Objective objective,
+                             List<String> lines)
+            throws ScoreboardLineTooLongException {
+
+        for (int i = 0; i < lines.size(); i++) {
+
+            String text = lines.get(i);
+
+            if (text.length() > MAX_LINE_LENGTH) {
+                throw new ScoreboardLineTooLongException(text, MAX_LINE_LENGTH);
+            }
+
+            int score = i + 1;
+            String teamName = "line" + score;
+            String entry = getInvisibleEntry(score);
+
+            Team team = scoreboard.getTeam(teamName);
+
+            if (team == null) {
+                team = scoreboard.registerNewTeam(teamName);
+                team.addEntry(entry);
+                objective.getScore(entry).setScore(score);
+            }
+
+            applyText(team, text);
+        }
+
+        cleanupExtraLines(scoreboard, lines.size());
+    }
+
+    private void applyText(Team team, String text) {
+
+        Component prefix;
+        Component suffix = Component.empty();
+
+        if (text.length() <= SPLIT_LIMIT) {
+            prefix = MINI.deserialize(text);
+        } else {
+            prefix = MINI.deserialize(text.substring(0, SPLIT_LIMIT));
+            suffix = MINI.deserialize(text.substring(SPLIT_LIMIT));
+        }
+
+        team.prefix(prefix);
+        team.suffix(suffix);
+    }
+
+    private void cleanupExtraLines(Scoreboard scoreboard, int maxLines) {
+
+        for (Team team : scoreboard.getTeams()) {
+
+            String name = team.getName();
+            if (!name.startsWith("line")) continue;
+
+            try {
+                int index = Integer.parseInt(name.substring(4));
+                if (index > maxLines) {
+                    team.unregister();
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+    }
+
+    private void resetScoreboard(Scoreboard scoreboard) {
+
+        scoreboard.clearSlot(DisplaySlot.SIDEBAR);
+        scoreboard.getEntries().forEach(scoreboard::resetScores);
+
+        scoreboard.getTeams().forEach(team -> {
+            if (team.getName().startsWith("line")) {
+                team.unregister();
+            }
+        });
+    }
+
+    private void configureHealthObjectives(Scoreboard scoreboard) {
+
+        if (options == null) return;
+
+        Objective tab = objectiveWrapper.getTabHealthObjective(
+                options.getTabHealthStyle().toWrapped(),
+                scoreboard
+        );
+
+        if (options.getTabHealthStyle() != JScoreboardTabHealthStyle.NONE) {
+            if (tab != null) tab.setDisplaySlot(DisplaySlot.PLAYER_LIST);
+        } else if (tab != null) {
+            tab.unregister();
+        }
+
+        Objective below = objectiveWrapper.getNameHealthObjective(scoreboard);
+
+        if (options.shouldShowHealthUnderName()) {
+            if (below != null) below.setDisplaySlot(DisplaySlot.BELOW_NAME);
+        } else if (below != null) {
+            below.unregister();
+        }
+    }
+
+    private void updateTeams(Scoreboard scoreboard) {
+        teams.forEach(team -> team.refresh(scoreboard));
+    }
+
+    private String stripColor(String component) {
+        return PlainTextComponentSerializer.plainText().serialize(
+                LegacyComponentSerializer.legacySection().deserialize(component)
+        );
+    }
 
     private String getInvisibleEntry(int index) {
         return "§" + Integer.toHexString(index);

@@ -35,7 +35,7 @@ public class JPerPlayerScoreboard extends JScoreboard {
       Function<Player, Component> generateTitleFunction,
       Function<Player, List<String>> generateLinesFunction
   ) {
-    setOptions(JScoreboardOptions.defaultOptions);
+    setOptions(JScoreboardOptions.DEFAULT_OPTIONS);
 
     this.generateTitleFunction = generateTitleFunction;
     this.generateLinesFunction = generateLinesFunction;
@@ -59,6 +59,21 @@ public class JPerPlayerScoreboard extends JScoreboard {
         lines = new ArrayList<>();
       }
       updateScoreboard(player.getScoreboard(), lines);
+    }
+  }
+
+  public void updateLines() throws ScoreboardLineTooLongException {
+    if (generateLinesFunction == null) return; // Line generator is not ready yet
+
+    for (UUID playerUUID : getActivePlayers()) {
+      Player player = Bukkit.getPlayer(playerUUID);
+      if (player == null) continue;
+
+      List<String> lines = this.generateLinesFunction.apply(player);
+      if (lines == null) {
+        lines = new ArrayList<>();
+      }
+      updateLines(player.getScoreboard(), lines);
     }
   }
 
@@ -131,11 +146,16 @@ public class JPerPlayerScoreboard extends JScoreboard {
     return player;
   }
 
+
   protected void setGenerateLinesFunction(Function<Player, List<String>> generateLinesFunction) {
     this.generateLinesFunction = generateLinesFunction;
   }
 
   protected void setGenerateTitleFunction(Function<Player, Component> generateTitleFunction) {
     this.generateTitleFunction = generateTitleFunction;
+  }
+
+  protected Scoreboard getScoreboard(Player player) {
+    return playerScoreboardMap.get(player.getUniqueId());
   }
 }

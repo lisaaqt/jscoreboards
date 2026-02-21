@@ -17,7 +17,7 @@ public final class JPerPlayerMethodBasedScoreboard extends JPerPlayerScoreboard 
   }
 
   public JPerPlayerMethodBasedScoreboard() {
-    this(JScoreboardOptions.defaultOptions);
+    this(JScoreboardOptions.DEFAULT_OPTIONS);
   }
 
   private Component getTitle(Player player) {

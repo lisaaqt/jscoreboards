@@ -44,7 +44,9 @@ subprojects {
         repositories {
             maven {
                 name = "lisaaCentral"
-                url = uri("https://artifactory.lisaa.dev/maven-releases")
+
+                def repoType = project.version.toString().endsWith('-SNAPSHOT') ? 'snapshots' : 'releases'
+                url = uri("https://artifactory.lisaa.dev/maven-${repoType}")
 
                 credentials(PasswordCredentials) {
                     username = project.findProperty("lisaaCentralUsername")
